@@ -1,0 +1,69 @@
+---
+title: "Untitled"
+author: "shimmy"
+date: "12/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+```{r}
+library(tidyverse)
+library(readr)
+library(NLP)
+library(spData)
+#library(spDataLarge)
+library(raster)
+library(mapview)
+library(sf)
+library(stringr)
+```
+
+```{r}
+data<- read_csv("C:/Users/shimm/Rproj/ODHF_v1.1/odhf_v1.1(1).txt")
+# data from https://www.statcan.gc.ca/eng/lode/databases/odhf
+census_data <- read_csv("98-401-X2016042_English_CSV_data.csv")
+#data from statcan cnesus data
+census_data_pop <- census_data %>% rename("city" = GEO_NAME) 
+census_data_pop <- census_data_pop%>% filter(str_detect(`DIM: Profile of Census Subdivisions (2247)`, "Population, 2016")) %>% dplyr::select(city, `Dim: Sex (3): Member ID: [1]: Total - Sex`)
+census_data_pop$city <- tolower(census_data_pop$city)
+joint <- data %>% left_join(census_data_pop, by = "city")
+```
+
+```{r}
+data <- data %>% rename("Census Subdivision Name" = CSDname) %>% rename("Census Subdivision Unique Identifier" = CSDuid) %>% rename("Province or Territory Unique Identifier" = Pruid) 
+data$latitude <- as.double(as.character(data$latitude))
+data$longitude <- as.double(as.character(data$longitude))
+
+```
+```{r}
+cols <- data %>% colnames()
+for(name in cols){
+  data <- data %>% filter(str_detect(name, "\\w"))
+}
+data %>% filter(!is.na(longitude), !is.na(latitude))%>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs =4326) %>% 
+  mapview(zcol = "facility_name") 
+```
+
+```{r}
+data %>% group_by(odhf_facility_type)%>% summarise(n())
+census_data %>% filter( `Dim: Sex (3): Member ID: [1]: Total - Sex`)
+
+```
+```{r}
+new <- joint %>% group_by(city) %>% summarise(amount = n()) %>% as.data.frame() 
+new <- new %>% left_join(census_data_pop, by = "city") %>% filter(!is.na(`Dim: Sex (3): Member ID: [1]: Total - Sex`))%>% mutate(fac_per_pop = amount/`Dim: Sex (3): Member ID: [1]: Total - Sex`)
+new %>% ggplot(aes(x = `Dim: Sex (3): Member ID: [1]: Total - Sex`, y = fac_per_pop)) + geom_point() + geom_smooth()
+lm <- lm(fac_per_pop ~  `Dim: Sex (3): Member ID: [1]: Total - Sex`, data = new)
+summary(lm)
+
+```
+
